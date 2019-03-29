@@ -23,6 +23,7 @@ import qualified GHC.Exts as GhcExts
 import qualified GHC.IO.Handle as Handle
 import           System.Process
 import qualified Text.Megaparsec.Error as Par
+import qualified Data.Text as T
 
 import           Radicle.Internal.Annotation (Annotated)
 import qualified Radicle.Internal.Annotation as Ann
@@ -535,10 +536,22 @@ addBinding :: Ident -> Maybe Text -> Value -> Bindings m -> Bindings m
 addBinding i d v b = b
     { bindingsEnv = Env . Map.insert i (Doc.Docd d v) . fromEnv $ bindingsEnv b }
 
+callExample :: Text -> Value -> Maybe Text
+callExample name value = case value of
+    Lambda args _ _ -> Just $ lambdaDoc args
+    LambdaRec _ args _ _ -> Just $ lambdaDoc args
+    _ -> Nothing
+  where
+    lambdaDoc args = "(" <> T.intercalate " " (name : map fromIdent args) <> ")"
+
 lookupAtomWithDoc :: Monad m => Ident -> Lang m (Doc.Docd Value)
-lookupAtomWithDoc i = get >>= \e -> case Map.lookup i . fromEnv $ bindingsEnv e of
+lookupAtomWithDoc i@(Ident name) = get >>= \e -> case Map.lookup i . fromEnv $ bindingsEnv e of
     Nothing -> throwErrorHere $ UnknownIdentifier i
-    Just x  -> pure x
+    Just x@(Doc.Docd d_ v)  -> case callExample name v of
+      Nothing -> pure x
+      Just tt -> case d_ of
+        Nothing -> pure x
+        Just d -> pure (Doc.Docd (Just (tt <> "\n\n" <> d)) v)
 
 -- | Lookup an atom in the environment
 lookupAtom :: Monad m => Ident -> Lang m Value
